@@ -1,0 +1,221 @@
+// Prisma Schema for "MI DEUDOR" Platform
+// Comprehensive data model reflecting all entities and relational integrity
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleType {
+  ADMIN
+  REPORTER
+  VIEWER
+}
+
+enum ComplaintStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum DebtorStatus {
+  PUBLISHED
+  INACTIVE
+  SUSPENDED
+}
+
+enum DebtStatus {
+  PENDING
+  PAID
+  DISPUTED
+}
+
+enum RiskClassification {
+  BAJO
+  MEDIO
+  ALTO
+  CRITICO
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        RoleType @unique
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
+
+  @@map("roles")
+}
+
+model User {
+  id             String      @id @default(uuid())
+  name           String
+  email          String      @unique
+  passwordHash   String
+  documentNumber String?     @unique
+  phone          String?
+  roleId         String
+  role           Role        @relation(fields: [roleId], references: [id])
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  complaints     Complaint[] @relation("UserComplaints")
+  auditLogs      AuditLog[]  @relation("UserAuditLogs")
+
+  @@map("users")
+}
+
+model Debtor {
+  id              String             @id @default(uuid())
+  fullName        String
+  documentNumber  String             @unique
+  photoUrl        String?
+  phone           String?
+  email           String?
+  address         String?
+  city            String
+  observations    String?
+  
+  totalDebt       Decimal            @default(0.0) @db.Decimal(14, 2)
+  creditorCount   Int                @default(0)
+  riskScore       Int                @default(1)
+  riskLevel       RiskClassification @default(BAJO)
+  status          DebtorStatus       @default(INACTIVE)
+  publishedAt     DateTime?
+  
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  debts           Debt[]
+  complaints      Complaint[]
+  auditLogs       AuditLog[]         @relation("DebtorAuditLogs")
+
+  @@index([documentNumber])
+  @@index([city])
+  @@index([riskScore])
+  @@index([status])
+  @@map("debtors")
+}
+
+model Creditor {
+  id             String    @id @default(uuid())
+  name           String
+  documentNumber String?   @unique
+  contactEmail   String?
+  contactPhone   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  debts          Debt[]
+
+  @@map("creditors")
+}
+
+model Debt {
+  id          String      @id @default(uuid())
+  debtorId    String
+  debtor      Debtor      @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  creditorId  String
+  creditor    Creditor    @relation(fields: [creditorId], references: [id])
+  complaintId String?
+  complaint   Complaint?  @relation(fields: [complaintId], references: [id], onDelete: SetNull)
+
+  amount      Decimal     @db.Decimal(14, 2)
+  currency    String      @default("COP")
+  dueDate     DateTime
+  description String
+  status      DebtStatus  @default(PENDING)
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  documents   Document[]
+
+  @@index([debtorId])
+  @@index([creditorId])
+  @@map("debts")
+}
+
+model Complaint {
+  id                  String          @id @default(uuid())
+  reporterId          String
+  reporter            User            @relation("UserComplaints", fields: [reporterId], references: [id])
+  
+  debtorId            String?
+  debtor              Debtor?         @relation(fields: [debtorId], references: [id], onDelete: SetNull)
+
+  debtorNameSnapshot  String
+  debtorDocSnapshot   String
+  debtorCitySnapshot  String
+  debtorPhoneSnapshot String?
+  debtorEmailSnapshot String?
+
+  status              ComplaintStatus @default(UNDER_REVIEW)
+  adminNotes          String?
+  rejectionReason     String?
+  correctionNotes     String?
+  
+  termsAccepted       Boolean         @default(true)
+  termsAcceptedAt     DateTime        @default(now())
+  
+  reviewedByUserId    String?
+  reviewedAt          DateTime?
+
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  debts               Debt[]
+  documents           Document[]
+  auditLogs           AuditLog[]      @relation("ComplaintAuditLogs")
+
+  @@index([status])
+  @@index([reporterId])
+  @@map("complaints")
+}
+
+model Document {
+  id          String     @id @default(uuid())
+  complaintId String
+  complaint   Complaint  @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  debtId      String?
+  debt        Debt?      @relation(fields: [debtId], references: [id], onDelete: SetNull)
+
+  title       String
+  fileUrl     String
+  fileType    String
+  fileSize    Int
+  uploadedAt  DateTime   @default(now())
+
+  @@index([complaintId])
+  @@map("documents")
+}
+
+model AuditLog {
+  id          String     @id @default(uuid())
+  userId      String?
+  user        User?      @relation("UserAuditLogs", fields: [userId], references: [id], onDelete: SetNull)
+  action      String     // e.g., "COMPLAINT_CREATED", "COMPLAINT_APPROVED", "DEBTOR_DEACTIVATED"
+  entity      String     // "COMPLAINT", "DEBTOR", "USER", "CONFIG"
+  entityId    String?
+  details     String     // JSON structured context details
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime   @default(now())
+
+  debtorId    String?
+  debtor      Debtor?    @relation("DebtorAuditLogs", fields: [debtorId], references: [id], onDelete: SetNull)
+  complaintId String?
+  complaint   Complaint? @relation("ComplaintAuditLogs", fields: [complaintId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

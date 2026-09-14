@@ -1,0 +1,6 @@
+{
+  "name": "MI DEUDOR",
+  "description": "Plataforma pública de consulta de deudores reportados por terceros con riguroso proceso de verificación, auditoría y aprobación administrativa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
